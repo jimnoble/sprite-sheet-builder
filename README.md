@@ -13,4 +13,6 @@ Each PNG's filename should start with the sequence name, then an underscore, the
 
 Once run, the output folder will contain all sprite sheets as .png, as well as a .json file describing the location and size of each frame of each sequence of each sprite sheet. This information is useful for animating within the game.
 
+All frames are separated from each other and the edge of the screen by one empty pixel.
+
 Maximum output sprite sheet size is 1024x1024, to match up with OpenGL's maximum texture size.
