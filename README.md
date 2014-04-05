@@ -1,4 +1,4 @@
-sprite-sheet-builder
+Sprite Sheet Builder
 ====================
 
 A program to combine sprite frame images into sprite sheets.
