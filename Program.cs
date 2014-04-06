@@ -10,6 +10,7 @@ namespace SpriteSheetBuilder
 
     using Newtonsoft.Json;
     using Newtonsoft.Json.Serialization;
+    using System.Collections.Generic;
     
     class Program
     {
@@ -66,31 +67,69 @@ namespace SpriteSheetBuilder
             Console.WriteLine("Completed successfully.");
         }
 
-        private static void CreateSpriteSheet(
+        static void CreateSpriteSheet(
             string folder,
             out Sheet.Sequence[] outputSequences, 
             out Bitmap outputBitmap)
         {
-            var sequences = Directory
+            var pngSequences = Directory
                 .GetFiles(folder, "*.png")
                 .Select(path => new
                 {
                     SequenceName = Regex.Match(Path.GetFileNameWithoutExtension(path), "^[^_]+").Value,
 
-                    FrameNumber = Regex.Match(Path.GetFileNameWithoutExtension(path), "(?<=^.*?_)[0-9]+").Value,
+                    FrameNumber = int.Parse(Regex.Match(Path.GetFileNameWithoutExtension(path), "(?<=^.*?_)[0-9]+").Value),
 
-                    Bitmap = Bitmap.FromFile(path)
+                    Image = Bitmap.FromFile(path)
                 })
                 .OrderBy(frame => frame.SequenceName)
                 .ThenBy(frame => frame.FrameNumber)
                 .GroupBy(frame => frame.SequenceName)
-                .Select(group => new
+                .Select(group => new FileSequence
                 {
                     Name = group.Key,
 
-                    Frames = group.ToArray()
+                    Frames = group
+                        .Select(f => new FileSequence.FileFrame
+                        {
+                            FrameNumber = f.FrameNumber,
+                            
+                            Image = f.Image
+                        })
+                        .ToArray()
                 })
                 .ToArray();
+
+            var gifSequences = Directory
+                .GetFiles(folder, "*.gif")
+                .SelectMany(path => GetGifFrames(Bitmap.FromFile(path))
+                    .Select((bitmap, index) => new
+                    {
+                        SequenceName = Path.GetFileNameWithoutExtension(path),
+
+                        FrameNumber = index,
+
+                        Image = bitmap
+                    }))
+                .OrderBy(frame => frame.SequenceName)
+                .ThenBy(frame => frame.FrameNumber)
+                .GroupBy(frame => frame.SequenceName)
+                .Select(group => new FileSequence
+                {
+                    Name = group.Key,
+
+                    Frames = group
+                        .Select(f => new FileSequence.FileFrame 
+                        { 
+                            FrameNumber = f.FrameNumber,
+
+                            Image = f.Image
+                        })
+                        .ToArray()
+                })
+                .ToArray();
+
+            var sequences = pngSequences.Concat(gifSequences);    
 
             var rawOutput = new Bitmap(1024, 1024, PixelFormat.Format32bppArgb);
 
@@ -106,7 +145,7 @@ namespace SpriteSheetBuilder
 
             var rowHeight = 0;
 
-            outputSequences = sequences
+            outputSequences = pngSequences
                 .Select(sequence => new Sheet.Sequence
                 {
                     Name = sequence.Name,
@@ -115,20 +154,20 @@ namespace SpriteSheetBuilder
                         .Frames
                         .Select(frame =>
                         {
-                            if (xPos + frame.Bitmap.Width + 1 > rawOutput.Width)
+                            if (xPos + frame.Image.Width + 1 > rawOutput.Width)
                             {
                                 xPos = 0;
 
                                 yPos += rowHeight + 1;
 
-                                rowHeight = frame.Bitmap.Height;
+                                rowHeight = frame.Image.Height;
                             }
                             else
                             {
-                                rowHeight = Math.Max(rowHeight, frame.Bitmap.Height);
+                                rowHeight = Math.Max(rowHeight, frame.Image.Height);
                             }
 
-                            rawGraphics.DrawImageUnscaled(frame.Bitmap, xPos, yPos);
+                            rawGraphics.DrawImage(frame.Image, xPos, yPos, frame.Image.Width, frame.Image.Height);
 
                             var f = new Sheet.Sequence.Frame
                             {
@@ -136,12 +175,12 @@ namespace SpriteSheetBuilder
 
                                 Y = yPos,
 
-                                Width = frame.Bitmap.Width,
+                                Width = frame.Image.Width,
 
-                                Height = frame.Bitmap.Height
+                                Height = frame.Image.Height
                             };
 
-                            xPos += frame.Bitmap.Width + 1;
+                            xPos += frame.Image.Width + 1;
 
                             maxX = Math.Max(maxX, xPos);
 
@@ -157,8 +196,47 @@ namespace SpriteSheetBuilder
 
             var croppedGraphics = Graphics.FromImage(outputBitmap);
 
-            croppedGraphics.DrawImageUnscaled(rawOutput, 0, 0);
+            croppedGraphics.DrawImage(rawOutput, 0, 0, rawOutput.Width, rawOutput.Height);
         }
+
+        static Image[] GetGifFrames(Image inputImage)
+        {
+            var outputImages = new List<Image>();
+
+            var frameDimension = new FrameDimension(inputImage.FrameDimensionsList[0]);
+
+            var frameCount = inputImage.GetFrameCount(frameDimension);
+
+            for (var i = 0; i < frameCount; i++)
+            {
+                inputImage.SelectActiveFrame(frameDimension, i);
+
+                var outputImage = new Bitmap(inputImage.Width, inputImage.Height, PixelFormat.Format32bppArgb);
+
+                var graphics = Graphics.FromImage(outputImage);
+
+                graphics.DrawImage(inputImage, 0, 0, inputImage.Width, inputImage.Height);
+
+                outputImages.Add(outputImage);
+            }
+
+            return outputImages.ToArray();
+        }
+
+        public class FileSequence
+        {
+            public string Name { get; set; }
+
+            public FileFrame[] Frames { get; set; }
+            
+            public class FileFrame
+            {
+                public int FrameNumber { get; set; }
+
+                public Image Image { get; set; }
+            }
+        }
+
 
         class Sheet
         {
